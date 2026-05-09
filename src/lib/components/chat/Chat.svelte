@@ -1411,6 +1411,17 @@
 		}
 	};
 
+	const restoreScrollPosition = async (scrollTop: number | null) => {
+		if (scrollTop === null) {
+			return;
+		}
+
+		await tick();
+		if (messagesContainerElement) {
+			messagesContainerElement.scrollTop = scrollTop;
+		}
+	};
+
 	let scrollRAF = null;
 	let contentsRAF = null;
 	const scheduleScrollToBottom = () => {
@@ -1822,6 +1833,15 @@
 	//////////////////////////
 
 	const submitPrompt = async (inputContent, inputFiles) => {
+		const preservedScrollTop =
+			($settings?.preserveScrollOnSubmit ?? false) && messagesContainerElement
+				? messagesContainerElement.scrollTop
+				: null;
+
+		if (preservedScrollTop !== null) {
+			autoScroll = false;
+		}
+
 		const _files = structuredClone(inputFiles);
 
 		chatFiles.push(
@@ -1858,6 +1878,7 @@
 		}
 
 		history.currentId = userMessageId;
+		await restoreScrollPosition(preservedScrollTop);
 
 		// focus on chat input (skip during voice call to avoid triggering mobile keyboard)
 		if (!$showCallOverlay) {
@@ -1867,7 +1888,7 @@
 
 		saveSessionSelectedModels();
 
-		await sendMessage(history, userMessageId);
+		await sendMessage(history, userMessageId, { preservedScrollTop });
 	};
 
 	const submitHandler = async (userPrompt, { _raw = false } = {}) => {
@@ -1967,14 +1988,19 @@
 		{
 			messages = null,
 			modelId = null,
-			modelIdx = null
+			modelIdx = null,
+			preservedScrollTop = null
 		}: {
 			messages?: any[] | null;
 			modelId?: string | null;
 			modelIdx?: number | null;
+			preservedScrollTop?: number | null;
 		} = {}
 	) => {
-		if (autoScroll) {
+		if (preservedScrollTop !== null) {
+			autoScroll = false;
+			await restoreScrollPosition(preservedScrollTop);
+		} else if (autoScroll) {
 			scrollToBottom();
 		}
 
@@ -2038,6 +2064,7 @@
 		}
 
 		await tick();
+		await restoreScrollPosition(preservedScrollTop);
 
 		// Re-clone history so sendMessageSocket gets the response messages we just added
 		_history = structuredClone(history);
@@ -2074,7 +2101,9 @@
 		if (primaryModel && primaryResponseMessageId) {
 			const chatEventEmitter = await getChatEventEmitter(primaryModel.id, _chatId);
 
-			scrollToBottom();
+			if (preservedScrollTop === null) {
+				scrollToBottom();
+			}
 			await sendMessageSocket(
 				primaryModel,
 				messages && messages.length > 0
@@ -2083,7 +2112,8 @@
 				_history,
 				primaryResponseMessageId,
 				_chatId,
-				selectedModelIds.length > 1 ? messageIdsMap : undefined
+				selectedModelIds.length > 1 ? messageIdsMap : undefined,
+				preservedScrollTop
 			);
 
 			if (chatEventEmitter) clearInterval(chatEventEmitter);
@@ -2148,7 +2178,8 @@
 		_history,
 		responseMessageId,
 		_chatId,
-		messageIdsMap?: Record<string, string>
+		messageIdsMap?: Record<string, string>,
+		preservedScrollTop: number | null = null
 	) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
@@ -2174,7 +2205,12 @@
 		// Remove duplicates
 		files = files.filter((item, index, array) => array.findIndex((i) => equal(i, item)) === index);
 
-		scrollToBottom();
+		if (preservedScrollTop !== null) {
+			autoScroll = false;
+			await restoreScrollPosition(preservedScrollTop);
+		} else {
+			scrollToBottom();
+		}
 		eventTarget.dispatchEvent(
 			new CustomEvent('chat:start', {
 				detail: {
@@ -2422,7 +2458,11 @@
 		}
 
 		await tick();
-		scrollToBottom();
+		if (preservedScrollTop !== null) {
+			await restoreScrollPosition(preservedScrollTop);
+		} else {
+			scrollToBottom();
+		}
 	};
 
 	const handleOpenAIError = async (error, responseMessage) => {

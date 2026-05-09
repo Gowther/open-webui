@@ -32,6 +32,7 @@
 	let widescreenMode = false;
 	let splitLargeChunks = false;
 	let scrollOnBranchChange = true;
+	let preserveScrollOnSubmit = false;
 	let userLocation = false;
 
 	// Interface
@@ -240,6 +241,7 @@
 		widescreenMode = $settings?.widescreenMode ?? false;
 		splitLargeChunks = $settings?.splitLargeChunks ?? false;
 		scrollOnBranchChange = $settings?.scrollOnBranchChange ?? true;
+		preserveScrollOnSubmit = $settings?.preserveScrollOnSubmit ?? false;
 
 		temporaryChatByDefault = $settings?.temporaryChatByDefault ?? false;
 		chatDirection = $settings?.chatDirection ?? 'auto';
@@ -1017,6 +1019,25 @@
 							bind:state={scrollOnBranchChange}
 							on:change={() => {
 								saveSettings({ scrollOnBranchChange });
+							}}
+						/>
+					</div>
+				</div>
+			</div>
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
+					<div id="preserve-scroll-on-submit-label" class=" self-center text-xs">
+						{$i18n.t('Preserve scroll position on submit')}
+					</div>
+
+					<div class="flex items-center gap-2 p-1">
+						<Switch
+							ariaLabelledbyId="preserve-scroll-on-submit-label"
+							tooltip={true}
+							bind:state={preserveScrollOnSubmit}
+							on:change={() => {
+								saveSettings({ preserveScrollOnSubmit });
 							}}
 						/>
 					</div>
