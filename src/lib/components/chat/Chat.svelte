@@ -127,6 +127,12 @@
 		autoScroll = false;
 	}
 
+	type ReadingPositionSnapshot = {
+		scrollTop: number;
+		anchorMessageId: string | null;
+		anchorOffsetTop: number | null;
+	};
+
 	let processing = '';
 	let messagesContainerElement: HTMLDivElement;
 
@@ -1423,19 +1429,65 @@
 		}
 	};
 
-	const restoreScrollPosition = async (scrollTop: number | null) => {
-		if (scrollTop === null) {
+	const shouldPreserveScrollOnSubmit = () => preserveScrollOnSubmit;
+	const shouldAutoScroll = () => autoScroll && !shouldPreserveScrollOnSubmit();
+
+	const getMessageIdFromElement = (element: Element) => {
+		const id = element.id?.startsWith('message-') ? element.id.slice('message-'.length) : null;
+		return id && history?.messages?.[id] ? id : null;
+	};
+
+	const captureReadingPosition = (): ReadingPositionSnapshot | null => {
+		if (!shouldPreserveScrollOnSubmit() || !messagesContainerElement) {
+			return null;
+		}
+
+		const containerRect = messagesContainerElement.getBoundingClientRect();
+		const messageElements = Array.from(
+			messagesContainerElement.querySelectorAll<HTMLElement>('[id^="message-"]')
+		).filter((element) => getMessageIdFromElement(element));
+		const anchorElement =
+			messageElements.find(
+				(element) => element.getBoundingClientRect().bottom >= containerRect.top
+			) ??
+			messageElements.at(-1) ??
+			null;
+
+		return {
+			scrollTop: messagesContainerElement.scrollTop,
+			anchorMessageId: anchorElement ? getMessageIdFromElement(anchorElement) : null,
+			anchorOffsetTop: anchorElement
+				? anchorElement.getBoundingClientRect().top - containerRect.top
+				: null
+		};
+	};
+
+	const restoreReadingPosition = (snapshot: ReadingPositionSnapshot | null) => {
+		if (!snapshot || !messagesContainerElement) {
+			return;
+		}
+
+		if (snapshot.anchorMessageId && snapshot.anchorOffsetTop !== null) {
+			const anchorElement = document.getElementById(`message-${snapshot.anchorMessageId}`);
+			if (anchorElement) {
+				const containerRect = messagesContainerElement.getBoundingClientRect();
+				const anchorOffsetTop = anchorElement.getBoundingClientRect().top - containerRect.top;
+				messagesContainerElement.scrollTop += anchorOffsetTop - snapshot.anchorOffsetTop;
+				return;
+			}
+		}
+
+		messagesContainerElement.scrollTop = snapshot.scrollTop;
+	};
+
+	const preserveReadingPositionAfterTick = async (snapshot: ReadingPositionSnapshot | null) => {
+		if (!snapshot) {
 			return;
 		}
 
 		await tick();
-		if (messagesContainerElement) {
-			messagesContainerElement.scrollTop = scrollTop;
-		}
+		restoreReadingPosition(snapshot);
 	};
-
-	const shouldPreserveScrollOnSubmit = () => preserveScrollOnSubmit;
-	const shouldAutoScroll = () => autoScroll && !shouldPreserveScrollOnSubmit();
 
 	let scrollRAF = null;
 	let contentsRAF = null;
@@ -1851,13 +1903,18 @@
 	// Chat functions
 	//////////////////////////
 
-	const submitPrompt = async (inputContent, inputFiles) => {
-		const preservedScrollTop =
-			shouldPreserveScrollOnSubmit() && messagesContainerElement
-				? messagesContainerElement.scrollTop
-				: null;
+	const submitPrompt = async (
+		inputContent,
+		inputFiles,
+		{
+			readingPosition = null
+		}: {
+			readingPosition?: ReadingPositionSnapshot | null;
+		} = {}
+	) => {
+		const activeReadingPosition = readingPosition ?? captureReadingPosition();
 
-		if (preservedScrollTop !== null) {
+		if (activeReadingPosition) {
 			autoScroll = false;
 		}
 
@@ -1897,21 +1954,31 @@
 		}
 
 		history.currentId = userMessageId;
-		await restoreScrollPosition(preservedScrollTop);
+		await preserveReadingPositionAfterTick(activeReadingPosition);
 
 		// focus on chat input (skip during voice call to avoid triggering mobile keyboard)
 		if (!$showCallOverlay) {
 			const chatInput = document.getElementById('chat-input');
-			chatInput?.focus();
+			chatInput?.focus({ preventScroll: true });
 		}
 
 		saveSessionSelectedModels();
 
-		await sendMessage(history, userMessageId, { preservedScrollTop });
+		await sendMessage(history, userMessageId, { readingPosition: activeReadingPosition });
 	};
 
-	const submitHandler = async (userPrompt, { _raw = false } = {}) => {
+	const submitHandler = async (
+		userPrompt,
+		{
+			_raw = false,
+			readingPosition = null
+		}: {
+			_raw?: boolean;
+			readingPosition?: ReadingPositionSnapshot | null;
+		} = {}
+	) => {
 		console.log('submitHandler', userPrompt, $chatId);
+		const activeReadingPosition = readingPosition ?? captureReadingPosition();
 
 		const _selectedModels = selectedModels.map((modelId) =>
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
@@ -1973,6 +2040,7 @@
 				messageInput?.setText('');
 				prompt = '';
 				files = [];
+				await preserveReadingPositionAfterTick(activeReadingPosition);
 				return;
 			} else {
 				// Interrupt: stop current generation and proceed
@@ -1997,8 +2065,9 @@
 		const _files = structuredClone(files);
 		files = [];
 		messageInput?.setText('');
+		await preserveReadingPositionAfterTick(activeReadingPosition);
 
-		await submitPrompt(userPrompt, _files);
+		await submitPrompt(userPrompt, _files, { readingPosition: activeReadingPosition });
 	};
 
 	const sendMessage = async (
@@ -2008,17 +2077,19 @@
 			messages = null,
 			modelId = null,
 			modelIdx = null,
-			preservedScrollTop = null
+			readingPosition = null
 		}: {
 			messages?: any[] | null;
 			modelId?: string | null;
 			modelIdx?: number | null;
-			preservedScrollTop?: number | null;
+			readingPosition?: ReadingPositionSnapshot | null;
 		} = {}
 	) => {
-		if (preservedScrollTop !== null) {
+		const activeReadingPosition = readingPosition ?? captureReadingPosition();
+
+		if (activeReadingPosition) {
 			autoScroll = false;
-			await restoreScrollPosition(preservedScrollTop);
+			await preserveReadingPositionAfterTick(activeReadingPosition);
 		} else if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
@@ -2083,7 +2154,7 @@
 		}
 
 		await tick();
-		await restoreScrollPosition(preservedScrollTop);
+		restoreReadingPosition(activeReadingPosition);
 
 		// Re-clone history so sendMessageSocket gets the response messages we just added
 		_history = structuredClone(history);
@@ -2120,7 +2191,7 @@
 		if (primaryModel && primaryResponseMessageId) {
 			const chatEventEmitter = await getChatEventEmitter(primaryModel.id, _chatId);
 
-			if (preservedScrollTop === null && shouldAutoScroll()) {
+			if (!activeReadingPosition && shouldAutoScroll()) {
 				scrollToBottom();
 			}
 			await sendMessageSocket(
@@ -2132,7 +2203,7 @@
 				primaryResponseMessageId,
 				_chatId,
 				selectedModelIds.length > 1 ? messageIdsMap : undefined,
-				preservedScrollTop
+				activeReadingPosition
 			);
 
 			if (chatEventEmitter) clearInterval(chatEventEmitter);
@@ -2198,7 +2269,7 @@
 		responseMessageId,
 		_chatId,
 		messageIdsMap?: Record<string, string>,
-		preservedScrollTop: number | null = null
+		readingPosition: ReadingPositionSnapshot | null = null
 	) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
@@ -2224,9 +2295,9 @@
 		// Remove duplicates
 		files = files.filter((item, index, array) => array.findIndex((i) => equal(i, item)) === index);
 
-		if (preservedScrollTop !== null) {
+		if (readingPosition) {
 			autoScroll = false;
-			await restoreScrollPosition(preservedScrollTop);
+			await preserveReadingPositionAfterTick(readingPosition);
 		} else if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
@@ -2238,6 +2309,7 @@
 			})
 		);
 		await tick();
+		restoreReadingPosition(readingPosition);
 
 		let userLocation;
 		if ($settings?.userLocation) {
@@ -2477,8 +2549,8 @@
 		}
 
 		await tick();
-		if (preservedScrollTop !== null) {
-			await restoreScrollPosition(preservedScrollTop);
+		if (readingPosition) {
+			restoreReadingPosition(readingPosition);
 		} else if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
@@ -3067,11 +3139,12 @@
 										}
 									}}
 									on:submit={async (e) => {
+										const readingPosition = captureReadingPosition();
 										clearDraft($chatId);
 										if (e.detail || files.length > 0) {
 											await tick();
 
-											submitHandler(e.detail);
+											submitHandler(e.detail, { readingPosition });
 										}
 									}}
 								/>
@@ -3111,10 +3184,11 @@
 										}
 									}}
 									on:submit={async (e) => {
+										const readingPosition = captureReadingPosition();
 										clearDraft();
 										if (e.detail || files.length > 0) {
 											await tick();
-											submitHandler(e.detail);
+											submitHandler(e.detail, { readingPosition });
 										}
 									}}
 								/>
