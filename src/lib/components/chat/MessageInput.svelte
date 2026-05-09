@@ -548,6 +548,62 @@
 		});
 	};
 
+	let scrollButtonTarget: 'last-user-message' | 'bottom' = 'last-user-message';
+	let lastCurrentId: string | null = null;
+	$: if (history?.currentId !== lastCurrentId) {
+		lastCurrentId = history?.currentId;
+		scrollButtonTarget = 'last-user-message';
+	}
+
+	const getLastUserMessageId = (): string | null => {
+		let message = history?.messages?.[history?.currentId];
+		const visitedMessageIds = new Set<string>();
+
+		while (message && !visitedMessageIds.has(message.id)) {
+			visitedMessageIds.add(message.id);
+
+			if (message.role === 'user') {
+				return message.id;
+			}
+
+			message = message.parentId !== null ? history.messages?.[message.parentId] : null;
+		}
+
+		return null;
+	};
+
+	const scrollToLastUserMessage = () => {
+		const lastUserMessageId = getLastUserMessageId();
+		const userMessageElement = lastUserMessageId
+			? document.getElementById(`message-${lastUserMessageId}`)
+			: null;
+
+		if (userMessageElement) {
+			userMessageElement.scrollIntoView({
+				block: 'start',
+				behavior: 'smooth'
+			});
+		} else {
+			scrollToBottom();
+		}
+	};
+
+	const scrollButtonHandler = () => {
+		if (!($settings?.preserveScrollOnSubmit ?? false)) {
+			autoScroll = true;
+			scrollToBottom();
+			scrollButtonTarget = 'last-user-message';
+		} else if (scrollButtonTarget === 'last-user-message') {
+			autoScroll = false;
+			scrollToLastUserMessage();
+			scrollButtonTarget = 'bottom';
+		} else {
+			autoScroll = false;
+			scrollToBottom();
+			scrollButtonTarget = 'last-user-message';
+		}
+	};
+
 	const screenCaptureHandler = async () => {
 		try {
 			// Request screen media
@@ -1170,8 +1226,7 @@
 							<button
 								class=" bg-white border border-gray-100 dark:border-none dark:bg-white/20 p-1.5 rounded-full pointer-events-auto"
 								on:click={() => {
-									autoScroll = true;
-									scrollToBottom();
+									scrollButtonHandler();
 								}}
 							>
 								<svg

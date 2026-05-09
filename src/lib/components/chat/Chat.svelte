@@ -121,6 +121,12 @@
 	let messageInput: MessageInput | undefined;
 
 	let autoScroll = true;
+	let preserveScrollOnSubmit = false;
+	$: preserveScrollOnSubmit = $settings?.preserveScrollOnSubmit ?? false;
+	$: if (preserveScrollOnSubmit && autoScroll) {
+		autoScroll = false;
+	}
+
 	let processing = '';
 	let messagesContainerElement: HTMLDivElement;
 
@@ -205,7 +211,11 @@
 		if (chatIdProp && (await loadChat())) {
 			await tick();
 			loading = false;
-			window.setTimeout(() => scrollToBottom(), 0);
+			window.setTimeout(() => {
+				if (shouldAutoScroll()) {
+					scrollToBottom();
+				}
+			}, 0);
 
 			await tick();
 
@@ -481,20 +491,22 @@
 				} else if (type === 'chat:message:embeds' || type === 'embeds') {
 					message.embeds = data.embeds;
 
-					// Auto-scroll to the embed once it's rendered in the DOM
-					await tick();
-					setTimeout(() => {
-						const embedEl = document.getElementById(`${event.message_id}-embeds-container`);
-						if (embedEl) {
-							embedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-						}
-					}, 100);
+					if (shouldAutoScroll()) {
+						// Auto-scroll to the embed once it's rendered in the DOM
+						await tick();
+						setTimeout(() => {
+							const embedEl = document.getElementById(`${event.message_id}-embeds-container`);
+							if (embedEl) {
+								embedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+							}
+						}, 100);
+					}
 				} else if (type === 'chat:message:error') {
 					message.error = data.error;
 				} else if (type === 'chat:message:follow_ups') {
 					message.followUps = data.follow_ups;
 
-					if (autoScroll) {
+					if (shouldAutoScroll()) {
 						scrollToBottom('smooth');
 					}
 				} else if (type === 'chat:outlet') {
@@ -1422,9 +1434,16 @@
 		}
 	};
 
+	const shouldPreserveScrollOnSubmit = () => preserveScrollOnSubmit;
+	const shouldAutoScroll = () => autoScroll && !shouldPreserveScrollOnSubmit();
+
 	let scrollRAF = null;
 	let contentsRAF = null;
 	const scheduleScrollToBottom = () => {
+		if (!shouldAutoScroll()) {
+			return;
+		}
+
 		if (!scrollRAF) {
 			scrollRAF = requestAnimationFrame(async () => {
 				scrollRAF = null;
@@ -1583,7 +1602,7 @@
 
 			await tick();
 
-			if (autoScroll) {
+			if (shouldAutoScroll()) {
 				scrollToBottom();
 			}
 
@@ -1647,7 +1666,7 @@
 		history.currentId = currentParentId;
 		await tick();
 
-		if (autoScroll) {
+		if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
 
@@ -1802,7 +1821,7 @@
 			history.messages[message.id] = message;
 
 			await tick();
-			if (autoScroll) {
+			if (shouldAutoScroll()) {
 				scrollToBottom();
 			}
 
@@ -1823,7 +1842,7 @@
 		console.log(data);
 		await tick();
 
-		if (autoScroll) {
+		if (shouldAutoScroll()) {
 			scheduleScrollToBottom();
 		}
 	};
@@ -1834,7 +1853,7 @@
 
 	const submitPrompt = async (inputContent, inputFiles) => {
 		const preservedScrollTop =
-			($settings?.preserveScrollOnSubmit ?? false) && messagesContainerElement
+			shouldPreserveScrollOnSubmit() && messagesContainerElement
 				? messagesContainerElement.scrollTop
 				: null;
 
@@ -2000,7 +2019,7 @@
 		if (preservedScrollTop !== null) {
 			autoScroll = false;
 			await restoreScrollPosition(preservedScrollTop);
-		} else if (autoScroll) {
+		} else if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
 
@@ -2101,7 +2120,7 @@
 		if (primaryModel && primaryResponseMessageId) {
 			const chatEventEmitter = await getChatEventEmitter(primaryModel.id, _chatId);
 
-			if (preservedScrollTop === null) {
+			if (preservedScrollTop === null && shouldAutoScroll()) {
 				scrollToBottom();
 			}
 			await sendMessageSocket(
@@ -2208,7 +2227,7 @@
 		if (preservedScrollTop !== null) {
 			autoScroll = false;
 			await restoreScrollPosition(preservedScrollTop);
-		} else {
+		} else if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
 		eventTarget.dispatchEvent(
@@ -2460,7 +2479,7 @@
 		await tick();
 		if (preservedScrollTop !== null) {
 			await restoreScrollPosition(preservedScrollTop);
-		} else {
+		} else if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
 	};
@@ -2535,7 +2554,7 @@
 
 			history.messages[history.currentId] = responseMessage;
 
-			if (autoScroll) {
+			if (shouldAutoScroll()) {
 				scrollToBottom();
 			}
 		}
@@ -2577,7 +2596,7 @@
 
 		await tick();
 
-		if (autoScroll) {
+		if (shouldAutoScroll()) {
 			scrollToBottom();
 		}
 
@@ -2595,7 +2614,7 @@
 				return;
 			}
 
-			if (autoScroll) {
+			if (shouldAutoScroll()) {
 				scrollToBottom();
 			}
 
@@ -2687,7 +2706,7 @@
 						history.messages[messageId] = message;
 					}
 
-					if (autoScroll) {
+					if (shouldAutoScroll()) {
 						scheduleScrollToBottom();
 					}
 				}
@@ -2947,9 +2966,13 @@
 								id="messages-container"
 								bind:this={messagesContainerElement}
 								on:scroll={(e) => {
-									autoScroll =
-										messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
-										messagesContainerElement.clientHeight + 5;
+									if (shouldPreserveScrollOnSubmit()) {
+										autoScroll = false;
+									} else {
+										autoScroll =
+											messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
+											messagesContainerElement.clientHeight + 5;
+									}
 								}}
 							>
 								<div class=" h-full w-full flex flex-col">

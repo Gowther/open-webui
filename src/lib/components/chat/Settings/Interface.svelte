@@ -1028,7 +1028,7 @@
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div id="preserve-scroll-on-submit-label" class=" self-center text-xs">
-						{$i18n.t('Preserve scroll position on submit')}
+						{$i18n.t('Keep reading position during responses')}
 					</div>
 
 					<div class="flex items-center gap-2 p-1">
