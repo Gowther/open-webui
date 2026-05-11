@@ -93,10 +93,9 @@
 		showControls.set(false);
 	}
 
-	// Auto-switch to Files tab when a terminal event targets or refreshes file navigation.
-	$: if ($showFileNavPath || $showFileNavDir) {
+	// Auto-switch to Files tab for explicit terminal file navigation without opening from stale dir state.
+	$: if ($showFileNavPath || ($showControls && $showFileNavDir)) {
 		activeTab = 'files';
-		showControls.set(true);
 	}
 
 	// Clear selected direct terminal if user lost permission

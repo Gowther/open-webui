@@ -450,8 +450,10 @@
 			displayFileHandler(data.path, { showControls, showFileNavPath });
 		} else if (type === 'terminal:write_file' || type === 'terminal:replace_file_content') {
 			if (!data?.path) return;
+			showControls.set(true);
 			showFileNavDir.set(data.path);
 		} else if (type === 'terminal:run_command') {
+			showControls.set(true);
 			showFileNavDir.set('/');
 		}
 	};
