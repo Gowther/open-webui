@@ -18,6 +18,7 @@
 		showArtifacts,
 		showEmbeds,
 		settings,
+		showFileNavDir,
 		showFileNavPath,
 		selectedTerminalId,
 		user
@@ -92,18 +93,10 @@
 		showControls.set(false);
 	}
 
-	// Auto-switch to Files tab when display_file is triggered
-	$: if ($showFileNavPath) {
+	// Auto-switch to Files tab when a terminal event targets or refreshes file navigation.
+	$: if ($showFileNavPath || $showFileNavDir) {
 		activeTab = 'files';
 		showControls.set(true);
-	}
-
-	// Auto-open Files tab when a terminal is selected (suppress panel open when full-screen)
-	$: if ($selectedTerminalId && showFilesTab) {
-		activeTab = 'files';
-		if (largeScreen) {
-			showControls.set(true);
-		}
 	}
 
 	// Clear selected direct terminal if user lost permission
