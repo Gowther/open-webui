@@ -1299,11 +1299,21 @@ async def get_available_models(request: Request) -> list[dict]:
     if request.app.state.config.TTS_ENGINE == 'openai':
         # Use custom endpoint if not using the official OpenAI API URL
         if not request.app.state.config.TTS_OPENAI_API_BASE_URL.startswith('https://api.openai.com'):
+            # Many OpenAI-compatible gateways (e.g. new-api, one-api) require
+            # an Authorization header even on /models. The official OpenAI
+            # endpoint also accepts (and historically required) it. Always
+            # send it when configured.
+            tts_headers = (
+                {'Authorization': f'Bearer {request.app.state.config.TTS_OPENAI_API_KEY}'}
+                if request.app.state.config.TTS_OPENAI_API_KEY
+                else {}
+            )
             timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
             async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
                 try:
                     async with session.get(
                         f'{request.app.state.config.TTS_OPENAI_API_BASE_URL}/audio/models',
+                        headers=tts_headers,
                         ssl=AIOHTTP_CLIENT_SESSION_SSL,
                     ) as response:
                         response.raise_for_status()
@@ -1316,6 +1326,7 @@ async def get_available_models(request: Request) -> list[dict]:
                     try:
                         async with session.get(
                             f'{request.app.state.config.TTS_OPENAI_API_BASE_URL}/models',
+                            headers=tts_headers,
                             ssl=AIOHTTP_CLIENT_SESSION_SSL,
                         ) as response:
                             response.raise_for_status()
@@ -1361,10 +1372,16 @@ async def get_available_voices(request) -> dict:
         # Use custom endpoint if not using the official OpenAI API URL
         if not request.app.state.config.TTS_OPENAI_API_BASE_URL.startswith('https://api.openai.com'):
             try:
+                tts_headers = (
+                    {'Authorization': f'Bearer {request.app.state.config.TTS_OPENAI_API_KEY}'}
+                    if request.app.state.config.TTS_OPENAI_API_KEY
+                    else {}
+                )
                 timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
                 async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
                     async with session.get(
                         f'{request.app.state.config.TTS_OPENAI_API_BASE_URL}/audio/voices',
+                        headers=tts_headers,
                         ssl=AIOHTTP_CLIENT_SESSION_SSL,
                     ) as response:
                         response.raise_for_status()
