@@ -412,7 +412,8 @@
 				}
 			}
 
-			if (['write_file'].includes(data?.name) && data?.params?.path) {
+			if (['write_file', 'replace_file_content'].includes(data?.name) && data?.params?.path) {
+				showControls.set(true);
 				showFileNavDir.set(res?.path ?? data.params.path);
 			}
 
